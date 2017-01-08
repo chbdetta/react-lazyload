@@ -12,6 +12,14 @@ const LISTEN_FLAG = 'data-lazyload-listened';
 const listenerMap = new Map();
 let pending = [];
 
+/**
+ * Check if the node itself is visible
+ * @param {any} node for the component
+ */
+const checkNodeVisible = function checkBoxVisible(node) {
+  const { width, height, top, left } = node.getBoundingClientRect();
+  return !(width === height === top === left === 0);
+};
 
 /**
  * Check if `component` is visible in overflow container `parent`
@@ -81,7 +89,7 @@ const checkVisible = function checkVisible(component) {
 
   const visible =
   // if the node is hidden via display: none, we consider it not visible
-  node.offsetParent &&
+  checkNodeVisible(node) &&
   (
     isOverflow ?
       checkOverflowVisible(component, parent) :
