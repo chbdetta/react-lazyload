@@ -18,7 +18,7 @@ let pending = [];
  */
 const checkNodeVisible = function checkBoxVisible(node) {
   const { width, height, top, left } = node.getBoundingClientRect();
-  return !(width === height === top === left === 0);
+  return !(width === 0 && height === 0 && top === 0 && left === 0);
 };
 
 /**
