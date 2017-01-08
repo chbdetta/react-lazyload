@@ -9,7 +9,7 @@ import debounce from './utils/debounce';
 import throttle from './utils/throttle';
 
 const LISTEN_FLAG = 'data-lazyload-listened';
-const listeners = [];
+const listenerMap = new Map();
 let pending = [];
 
 
@@ -79,9 +79,14 @@ const checkVisible = function checkVisible(component) {
                      parent !== document &&
                      parent !== document.documentElement;
 
-  const visible = isOverflow ?
-                  checkOverflowVisible(component, parent) :
-                  checkNormalVisible(component);
+  const visible =
+  // if the node is hidden via display: none, we consider it not visible
+  node.offsetParent &&
+  (
+    isOverflow ?
+      checkOverflowVisible(component, parent) :
+      checkNormalVisible(component)
+  );
 
   if (visible) {
     // Avoid extra render if previously is visible, yeah I mean `render` call,
@@ -103,7 +108,7 @@ const checkVisible = function checkVisible(component) {
 };
 
 
-const purgePending = function purgePending() {
+const purgePending = function purgePending(listeners) {
   pending.forEach(component => {
     const index = listeners.indexOf(component);
     if (index !== -1) {
@@ -115,19 +120,19 @@ const purgePending = function purgePending() {
 };
 
 
-const lazyLoadHandler = () => {
+const lazyLoadHandler = listeners => () => {
   for (let i = 0; i < listeners.length; ++i) {
     const listener = listeners[i];
     checkVisible(listener);
   }
 
   // Remove `once` component in listeners
-  purgePending();
+  purgePending(listeners);
 };
 
 // Depending on component's props
 let delayType;
-let finalLazyLoadHandler = null;
+const finalLazyLoadHandlers = new Map();
 
 
 class LazyLoad extends Component {
@@ -154,6 +159,24 @@ class LazyLoad extends Component {
       }
     }
 
+    // the default parent is window
+    let parent = window;
+    // overflow make the parent component's overflow parent
+    if (this.props.overflow) {
+      parent = scrollParent(ReactDom.findDOMNode(this));
+      if (!parent) {
+        console.warn('[react-lazyload] No overflow parent found! maybe you should not set overflow to true');
+      }
+    }
+
+    // get the finalLazyLoadHandler according to parent
+    let finalLazyLoadHandler = finalLazyLoadHandlers.get(parent);
+    let listeners = listenerMap.get(parent);
+    if (!listeners) {
+      listeners = [];
+      listenerMap.set(parent, listeners);
+    }
+
     // It's unlikely to change delay type on the fly, this is mainly
     // designed for tests
     let needResetFinalLazyLoadHandler = false;
@@ -173,20 +196,21 @@ class LazyLoad extends Component {
 
     if (!finalLazyLoadHandler) {
       if (this.props.debounce !== undefined) {
-        finalLazyLoadHandler = debounce(lazyLoadHandler, typeof this.props.debounce === 'number' ?
+        finalLazyLoadHandler = debounce(lazyLoadHandler(listeners), typeof this.props.debounce === 'number' ?
                                                          this.props.debounce :
                                                          300);
         delayType = 'debounce';
       } else {
-        finalLazyLoadHandler = throttle(lazyLoadHandler, typeof this.props.throttle === 'number' ?
+        finalLazyLoadHandler = throttle(lazyLoadHandler(listeners), typeof this.props.throttle === 'number' ?
                                                          this.props.throttle :
                                                          300);
         delayType = 'throttle';
       }
+      // add to the map to cache for other components with same scroll parent
+      finalLazyLoadHandlers.set(parent, finalLazyLoadHandler);
     }
 
     if (this.props.overflow) {
-      const parent = scrollParent(ReactDom.findDOMNode(this));
       if (parent) {
         const listenerCount = 1 + (+parent.getAttribute(LISTEN_FLAG));
         if (listenerCount === 1) {
@@ -215,9 +239,12 @@ class LazyLoad extends Component {
   }
 
   componentWillUnmount() {
+    let parent = window;
+    let finalLazyLoadHandler = finalLazyLoadHandlers.get(parent);
     if (this.props.overflow) {
-      const parent = scrollParent(ReactDom.findDOMNode(this));
+      parent = scrollParent(ReactDom.findDOMNode(this));
       if (parent) {
+        finalLazyLoadHandler = finalLazyLoadHandlers.get(parent);
         const listenerCount = (+parent.getAttribute(LISTEN_FLAG)) - 1;
         if (listenerCount === 0) {
           parent.removeEventListener('scroll', finalLazyLoadHandler);
@@ -228,14 +255,20 @@ class LazyLoad extends Component {
       }
     }
 
-    const index = listeners.indexOf(this);
-    if (index !== -1) {
-      listeners.splice(index, 1);
-    }
-
-    if (listeners.length === 0) {
-      off(window, 'resize', finalLazyLoadHandler);
-      off(window, 'scroll', finalLazyLoadHandler);
+    const listeners = listenerMap.get(parent);
+      // listenres may already be deleted beacause of the `once` prop
+    if (listeners) {
+      const index = listeners.indexOf(this);
+      if (index !== -1) {
+        listeners.splice(index, 1);
+      }
+      
+      if (listeners.length === 0) {
+        off(window, 'resize', finalLazyLoadHandler);
+        off(window, 'scroll', finalLazyLoadHandler);
+        listenerMap.delete(parent);
+        finalLazyLoadHandlers.delete(parent);
+      }
     }
   }
 
@@ -274,4 +307,8 @@ LazyLoad.defaultProps = {
 import decorator from './decorator';
 export const lazyload = decorator;
 export default LazyLoad;
-export { lazyLoadHandler as forceCheck };
+export const forceCheck = () => {
+  listenerMap.forEach(([parent, listeners]) => {
+    lazyLoadHandler(listeners)();
+  });
+};
