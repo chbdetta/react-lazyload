@@ -317,6 +317,6 @@ export const lazyload = decorator;
 export default LazyLoad;
 export const forceCheck = () => {
   listenerMap.forEach(([parent, listeners]) => {
-    lazyLoadHandler(listeners)();
+    lazyLoadHandler(listeners || [])();
   });
 };
