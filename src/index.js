@@ -149,7 +149,6 @@ class LazyLoad extends Component {
     super(props);
 
     this.visible = false;
-
   }
 
   componentDidMount() {
@@ -271,7 +270,7 @@ class LazyLoad extends Component {
       if (index !== -1) {
         listeners.splice(index, 1);
       }
-      
+
       if (listeners.length === 0) {
         off(window, 'resize', finalLazyLoadHandler);
         off(window, 'scroll', finalLazyLoadHandler);
@@ -317,7 +316,7 @@ import decorator from './decorator';
 export const lazyload = decorator;
 export default LazyLoad;
 export const forceCheck = () => {
-  listenerMap.forEach(([parent, listeners]) => {
+  listenerMap.forEach((listeners) => {
     lazyLoadHandler(listeners || [])();
   });
 };
